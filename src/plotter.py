@@ -12,7 +12,9 @@ class Plotter:
     Motor de visualización científica  en 2D y 3D con Matplotlib.
     """
 
-    def __init__(self, style: str = "seaborn-v0_8-whitegrid", figsize: tuple[int, int] = (9, 6)) -> None:
+    def __init__(
+        self, style: str = "seaborn-v0_8-whitegrid", figsize: tuple[int, int] = (9, 6)
+    ) -> None:
         """
         Inicializa la configuración estética global del graficador.
         """
@@ -29,7 +31,7 @@ class Plotter:
         """
         Normaliza la entrada para que siempre sea una lista de vectores 1D,
         permitiendo que el mismo método grafique 1 o N curvas sin duplicar código.
-        
+
         - Si recibe un vector 1D de forma (steps,): devuelve [data].
         - Si recibe una matriz 2D de forma (steps, M): separa las M columnas en una lista.
         - Si recibe una lista/tupla de vectores 1D: la convierte en lista de np.ndarray.
@@ -40,8 +42,10 @@ class Plotter:
             if data.ndim == 2:
                 # Cada columna j es una serie independiente de longitud 'steps'
                 return [data[:, j] for j in range(data.shape[1])]
-            raise ValueError(f"Se esperaba un arreglo 1D o 2D, pero se recibió forma {data.shape}.")
-        
+            raise ValueError(
+                f"Se esperaba un arreglo 1D o 2D, pero se recibió forma {data.shape}."
+            )
+
         return [np.asarray(arr, dtype=np.float64).ravel() for arr in data]
 
     def plot_2d(
@@ -85,7 +89,9 @@ class Plotter:
         fig, ax = plt.subplots(figsize=self.figsize)
 
         for i, (x_arr, y_arr) in enumerate(zip(x_list, y_list)):
-            curve_label = labels[i] if (labels is not None and i < len(labels)) else None
+            curve_label = (
+                labels[i] if (labels is not None and i < len(labels)) else None
+            )
             ax.plot(x_arr, y_arr, lw=lw, alpha=alpha, label=curve_label)
 
         ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
@@ -151,13 +157,21 @@ class Plotter:
         ax: Axes3D = fig.add_subplot(111, projection="3d")
 
         for i, (x_arr, y_arr, z_arr) in enumerate(zip(x_list, y_list, z_list)):
-            curve_label = labels[i] if (labels is not None and i < len(labels)) else None
-            line = ax.plot(x_arr, y_arr, z_arr, lw=lw, alpha=alpha, label=curve_label)[0]
+            curve_label = (
+                labels[i] if (labels is not None and i < len(labels)) else None
+            )
+            line = ax.plot(x_arr, y_arr, z_arr, lw=lw, alpha=alpha, label=curve_label)[
+                0
+            ]
 
             if mark_start and x_arr.size > 0:
                 ax.scatter(
-                    x_arr[0], y_arr[0], z_arr[0],
-                    color=line.get_color(), s=25, marker="o"
+                    x_arr[0],
+                    y_arr[0],
+                    z_arr[0],
+                    color=line.get_color(),
+                    s=25,
+                    marker="o",
                 )
 
         ax.set_title(title, fontsize=13, fontweight="bold", pad=12)
@@ -171,9 +185,9 @@ class Plotter:
             all_x = np.concatenate(x_list)
             all_y = np.concatenate(y_list)
             all_z = np.concatenate(z_list)
-            max_range = np.array([
-                np.ptp(all_x), np.ptp(all_y), np.ptp(all_z)
-            ]).max() / 2.0
+            max_range = (
+                np.array([np.ptp(all_x), np.ptp(all_y), np.ptp(all_z)]).max() / 2.0
+            )
 
             mid_x = (all_x.max() + all_x.min()) * 0.5
             mid_y = (all_y.max() + all_y.min()) * 0.5

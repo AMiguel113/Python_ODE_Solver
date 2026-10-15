@@ -17,6 +17,7 @@ def lorenz_system(t, y):
     out[2] = y[0] * y[1] - beta * y[2]
     return out
 
+
 @njit
 def aizawa_system(t, y):
     """
@@ -43,6 +44,7 @@ def aizawa_system(t, y):
     out[2] = dz
     return out
 
+
 @njit
 def roessler_system(t, y):
     """
@@ -51,7 +53,7 @@ def roessler_system(t, y):
     dz/dt = b + z*(x - c)
     """
     x, yy, z = y[0], y[1], y[2]
-    
+
     # Parámetros clásicos de Rössler
     a = 0.2
     b = 0.2
@@ -87,7 +89,7 @@ if __name__ == "__main__":
         zlabel="z",
         labels=["Trayectoria RK4"],
     )
-    
+
     y0_aizawa = [0.1, 0.0, 0.0]
     t0, tf, dt = 0.0, 50.0, 0.01
 
@@ -111,10 +113,10 @@ if __name__ == "__main__":
         ylabel="Eje Y",
         zlabel="Eje Z",
         labels=["Órbita Aizawa"],
-        equal_box=True,      # Mantiene la caja isométrica (equivalente a set view equal xyz de Gnuplot)
-        view_angle=(30, -45),# Ángulo de elevación y azimut inicial de la cámara
-        save_path="figs/aizawa_3d.png", # Guarda automáticamente en figs/
-        show=True
+        equal_box=True,  # Mantiene la caja isométrica (equivalente a set view equal xyz de Gnuplot)
+        view_angle=(30, -45),  # Ángulo de elevación y azimut inicial de la cámara
+        save_path="figs/aizawa_3d.png",  # Guarda automáticamente en figs/
+        show=True,
     )
     y0 = [0.1, 0.1, 0.1]
     t0, tf, dt = 0.0, 100.0, 0.005  # dt fino para alta resolución en la banda caótica
@@ -134,40 +136,51 @@ if __name__ == "__main__":
     y = trajectories[:, 1]
     z = trajectories[:, 2]
 
-    # Truco visualizador profesional manteniendo tu Plotter: 
+    # Truco visualizador profesional manteniendo tu Plotter:
     # Usamos directamente Matplotlib sobre la figura base para mapear el eje Z al color (profundidad del atractor)
     fig, ax = plotter.plot_3d(
-        x_data=x, y_data=y, z_data=z,
+        x_data=x,
+        y_data=y,
+        z_data=z,
         title="Atractor de Rössler - Integrado con tu motor RK4",
-        xlabel="X", ylabel="Y", zlabel="Z",
+        xlabel="X",
+        ylabel="Y",
+        zlabel="Z",
         equal_box=True,
         view_angle=(25, -70),
-        show=False # No la muestra de inmediato para maquillar el color
+        show=False,  # No la muestra de inmediato para maquillar el color
     )
 
     # Añadimos un mapa de colores basado en la altura Z (z-depth coloring)
     # Borramos la línea monocromática por defecto y pintamos un gradiente continuo
     ax.clear()
-    
+
     # Creamos segmentos de línea coloreados por la coordenada Z
     points = np.array([x, y, z]).T.reshape(-1, 1, 3)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    
+
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
     lc = Line3DCollection(segments, cmap="plasma", linewidth=0.8, alpha=0.85)
-    lc.set_array(z) # El color cambia dinámicamente según la profundidad Z
+    lc.set_array(z)  # El color cambia dinámicamente según la profundidad Z
     ax.add_collection3d(lc)
 
     # Reconfiguramos los límites y etiquetas de tu plotter
     ax.set_xlim(x.min(), x.max())
     ax.set_ylim(y.min(), y.max())
     ax.set_zlim(z.min(), z.max())
-    ax.set_title("Atractor de Rössler (Z-Depth Plasma Colormap)", fontsize=13, fontweight="bold", pad=12)
+    ax.set_title(
+        "Atractor de Rössler (Z-Depth Plasma Colormap)",
+        fontsize=13,
+        fontweight="bold",
+        pad=12,
+    )
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
     ax.view_init(elev=25, azim=-70)
-    
+
     print("Mostrando visualización interactiva...")
     import matplotlib.pyplot as plt
+
     plt.show()

@@ -56,7 +56,7 @@ def symplectic_euler_step(function, t, y, dt):
     new_y = np.copy(y)
     new_y[half:] = y[half:] + dt * k1[half:]
     new_y[:half] = y[:half] + dt * new_y[half:]
-    return (new_y,k1)
+    return (new_y, k1)
 
 
 @njit
