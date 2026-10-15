@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from integrator import euler, rk4, symplectic_euler
+from .integrator import euler, rk4, symplectic_euler
 
 
 class ODESolver(ABC):
@@ -188,7 +188,7 @@ class ODESolver(ABC):
         status = "Resuelto" if self.trajectories is not None else "Pendiente"
         return (
             f"<{self.__class__.__name__} | Metodo: {self.method} | "
-            f"Shape y0: {self.initial_state.shape} | "
+            f"Dimension y0: {self.initial_state.shape} | "
             f"Intervalo: [{self.t0}, {self.tf}] | dt: {self.dt} | Estado: {status}>"
         )
 
