@@ -3,7 +3,7 @@ import time
 import numpy as np
 from numba import njit
 
-from src.ode_solver import RK4
+from src.ode_solver import SymplecticEuler
 from src.plotter import Plotter
 
 
@@ -159,10 +159,10 @@ if __name__ == "__main__":
     # 1. EJECUCIÓN Y GRÁFICA: MODELO VECTORIAL (54D)
     # --------------------------------------------------------------------------
     print("Ejecutando Modelo Vectorial (54D) para 250 años...")
-    motor_vectorial = RK4(
+    motor_vectorial = SymplecticEuler(
         calcular_aceleraciones_vector, y0=CI_solar, t0=0.0, tf=anos_a_simular, dt=dt
     )
-    motor_vectorial.solve()  # Compilación JIT
+    motor_vectorial.solve()
 
     inicio_vec = time.perf_counter()
     t_vec, traj_vec, deriv_vec = motor_vectorial.solve()
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     # --------------------------------------------------------------------------
     print("Ejecutando Modelo Matricial (6x9) para 250 años...")
     CI_matriz = np.array(CI_solar, dtype=np.float64).reshape((9, 6)).T
-    motor_matricial = RK4(
+    motor_matricial = SymplecticEuler(
         calcular_aceleraciones_matriz, y0=CI_matriz, t0=0.0, tf=anos_a_simular, dt=dt
     )
     motor_matricial.solve()  # Compilación JIT
