@@ -94,9 +94,8 @@ def eval_putzer_vector_single_t(lambdas: np.ndarray, dt_val: float) -> np.ndarra
     # |tau| * max(1, max_j |lambda_j|) <= 0.25, donde tau = dt_val / 2^s
     max_lam = 0.0
     for i in range(n_dim):
-        abs_lam = np.abs(lambdas[i])
-        if abs_lam > max_lam:
-            max_lam = abs_lam
+        abs_lam = float(np.abs(lambdas[i]))
+        max_lam = max(max_lam, abs_lam)
 
     scale_metric = np.abs(dt_val) * max(max_lam, 1.0)
     s_scale = 0
