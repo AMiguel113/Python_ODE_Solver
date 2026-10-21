@@ -178,6 +178,9 @@ class PutzerPropagator(BasePropagator):
         self.p_tensor, self.cayley_hamilton_residual = build_putzer_polynomial_basis(
             self.a_matrix, self.lambdas
         )
+        # Vistas contiguas en float64 para contraer únicamente la parte real en BLAS (50% menos FLOPs y RAM)
+        self.p_real: np.ndarray = np.ascontiguousarray(self.p_tensor.real, dtype=np.float64)
+        self.p_imag: np.ndarray = np.ascontiguousarray(self.p_tensor.imag, dtype=np.float64)
 
     def evaluate_basis(self, t_grid: np.ndarray) -> np.ndarray:
         """
@@ -190,15 +193,16 @@ class PutzerPropagator(BasePropagator):
         # Etapa 2 del Pipeline Tensorial (Ec. 102): Matriz dinámica R[alpha, k] = r_{k+1}(t_alpha - t0)
         r_matrix = compute_putzer_coefficients_grid(self.lambdas, t_arr, self.t0)
 
-        # Etapa 3 del Pipeline Tensorial (Ec. 103): Contracción de Einstein sobre el índice modal k
-        # 'ak,kij->aij' suma sobre k in {0, ..., N-1} para cada instante a y cada entrada matricial (i, j)
-        phi_complex = np.einsum(
-            "ak,kij->aij", r_matrix, self.p_tensor, optimize=True
-        )
+        # Etapa 3 del Pipeline Tensorial (Ec. 103): Re(Phi) = Re(R)Re(P) - Im(R)Im(P)
+        # Evita calcular y alojar la parte imaginaria nula (~1e-16j)
+        r_real = np.ascontiguousarray(r_matrix.real, dtype=np.float64)
+        r_imag = np.ascontiguousarray(r_matrix.imag, dtype=np.float64)
 
-        # Como A in R^{N x N} y Phi(t0, t0) = I_N in R^{N x N}, por unicidad (Proposición 2.1)
-        # la parte imaginaria residual (~1e-16j de pares conjugados) se anula idénticamente
-        return np.real(phi_complex)
+        phi_real = np.einsum("ak,kij->aij", r_real, self.p_real, optimize=True)
+        if np.any(r_imag):
+            phi_real -= np.einsum("ak,kij->aij", r_imag, self.p_imag, optimize=True)
+
+        return phi_real
 
     def trace_integral(self, t_grid: np.ndarray) -> np.ndarray:
         """
@@ -208,12 +212,12 @@ class PutzerPropagator(BasePropagator):
         return self.trace_a * (t_arr - self.t0)
 
 
-@nb.njit
 def _build_matrix_rhs_kernel(a_func: Callable) -> Callable:
     """
-    Fábrica compilada en Numba que transforma un operador matricial dependiente
-    del tiempo A(t) en el campo vectorial matricial derecho F(t, Phi) = A(t) @ Phi
-    de la Ecuación Diferencial Matricial Homogénea dPhi/dt = A(t)Phi (Ecuación 26).
+    Fábrica de Python que envuelve un operador matricial @njit A(t) en el campo
+    vectorial matricial derecho F(t, Phi) = A(t) @ Phi compilado con @nb.njit
+    para la Ecuación Diferencial Matricial Homogénea dPhi/dt = A(t)Phi (Ecuación 26).
+    (Nota: la función exterior NO lleva @nb.njit para evitar TypingError al crear el closure).
     """
 
     @nb.njit
@@ -221,6 +225,39 @@ def _build_matrix_rhs_kernel(a_func: Callable) -> Callable:
         return a_func(t) @ phi_mat
 
     return matrix_rhs
+
+
+def _build_trace_integral_kernel(a_func: Callable) -> Callable:
+    """
+    Fábrica de Python que devuelve un kernel @nb.njit para integrar en C
+    la traza acumulada int_{t0}^{t_alpha} Tr(A(s)) ds sin bucles en el intérprete.
+    """
+
+    @nb.njit
+    def trace_quadrature(t_arr: np.ndarray, n_dim: int) -> np.ndarray:
+        k_steps = t_arr.shape[0]
+        int_trace = np.zeros(k_steps, dtype=np.float64)
+        if k_steps <= 1:
+            return int_trace
+
+        mat_prev = a_func(t_arr[0])
+        tr_prev = 0.0
+        for i in range(n_dim):
+            tr_prev += mat_prev[i, i]
+
+        acc = 0.0
+        for alpha in range(1, k_steps):
+            mat_curr = a_func(t_arr[alpha])
+            tr_curr = 0.0
+            for i in range(n_dim):
+                tr_curr += mat_curr[i, i]
+            dt_step = t_arr[alpha] - t_arr[alpha - 1]
+            acc += 0.5 * (tr_prev + tr_curr) * dt_step
+            int_trace[alpha] = acc
+            tr_prev = tr_curr
+        return int_trace
+
+    return trace_quadrature
 
 
 class NumericalMatrixPropagator(BasePropagator):
@@ -255,12 +292,15 @@ class NumericalMatrixPropagator(BasePropagator):
         self.tf: float = float(tf)
         self.dt: float = float(dt)
         self.solver_cls: type[ODESolver] = solver_cls
+        self.is_numba_a_func: bool = is_numba_a_func
 
-        # Si a_func(t) está compilada con @njit, construimos el kernel matricial F(t, Phi) = A(t) @ Phi
+        # Si a_func(t) está compilada con @njit, construimos los kernels matriciales en Numba
         if is_numba_a_func:
             self.matrix_rhs: Callable = _build_matrix_rhs_kernel(a_func)
+            self._trace_kernel: Callable | None = _build_trace_integral_kernel(a_func)
         else:
             self.matrix_rhs = lambda t, phi_mat: a_func(t) @ phi_mat
+            self._trace_kernel = None
 
         # Condición inicial canónica Phi(t0, t0) = I_N (Ecuación 38)
         identity_n = np.eye(self.dimension, dtype=np.float64)
@@ -298,6 +338,10 @@ class NumericalMatrixPropagator(BasePropagator):
             t_arr = self.matrix_solver.times
         else:
             t_arr = np.asarray(t_grid, dtype=np.float64).ravel()
+
+        # Si a_func es @njit, ejecutamos toda la cuadratura de la traza en C sin salir a Python
+        if self._trace_kernel is not None:
+            return self._trace_kernel(t_arr, self.dimension)
 
         k_steps = t_arr.shape[0]
         traces = np.empty(k_steps, dtype=np.float64)

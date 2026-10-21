@@ -98,51 +98,61 @@ def eval_putzer_vector_single_t(lambdas: np.ndarray, dt_val: float) -> np.ndarra
         max_lam = max(max_lam, abs_lam)
 
     scale_metric = np.abs(dt_val) * max(max_lam, 1.0)
-    s_scale = 0
+    s = 0
     while scale_metric > 0.25:
         scale_metric *= 0.5
-        s_scale += 1
-
-    tau = dt_val / (2.0**s_scale)
+        s += 1
 
     # Paso 2: Evaluar la serie de Taylor Psi_bi(tau) = sum_{m=0}^{q} (tau^m / m!) J_Putzer^m
     # Con |tau * lambda_max| <= 0.25 y q = 18, el resto de truncamiento es < 1e-26 (<< eps_mach)
+    tau = dt_val / (2.0**s)
+    q_order = 18
+
+    # VIA RAPIDA O(q * N) SIN MATRICES 2D: cuando s == 0 (|dt_val| * max(|lambda|, 1) <= 0.25),
+    # no hay fase de duplicación matricial y basta evaluar únicamente la primera columna r(dt_val).
+    if s == 0:
+        r_vec = np.zeros(n_dim, dtype=np.complex128)
+        term_vec = np.zeros(n_dim, dtype=np.complex128)
+        r_vec[0] = 1.0 + 0.0j
+        term_vec[0] = 1.0 + 0.0j
+
+        for m in range(1, q_order + 1):
+            inv_m = tau / float(m)
+            upper_i = m if m < n_dim else n_dim - 1
+            for i in range(upper_i, 0, -1):
+                term_vec[i] = (lambdas[i] * term_vec[i] + term_vec[i - 1]) * inv_m
+            term_vec[0] = (lambdas[0] * term_vec[0]) * inv_m
+
+            for i in range(upper_i + 1):
+                r_vec[i] += term_vec[i]
+        return r_vec
+
+    # CASO GENERAL s > 0: evaluamos exp(tau * J_Putzer) actualizando term in-place (en reversa)
+    # y restringiendo j a la banda diagonal activa max(0, i - m) <= j <= i.
     t_mat = np.zeros((n_dim, n_dim), dtype=np.complex128)
     term = np.zeros((n_dim, n_dim), dtype=np.complex128)
-    next_term = np.zeros((n_dim, n_dim), dtype=np.complex128)
 
-    # Inicialización m = 0: J_Putzer^0 = I_N
     for i in range(n_dim):
         t_mat[i, i] = 1.0 + 0.0j
         term[i, i] = 1.0 + 0.0j
 
-    q_order = 18
     for m in range(1, q_order + 1):
         inv_m = tau / float(m)
-
-        # Producto matricial esparcido por la izquierda con J_Putzer:
-        # Como (J_Putzer)_{i, i} = lambda_i y (J_Putzer)_{i, i-1} = 1,
-        # la entrada (i, j) del nuevo término solo combina dos entradas del término previo:
-        # NextTerm[i, j] = (tau / m) * (lambda_i * Term[i, j] + Term[i-1, j] si i > j)
-        for i in range(n_dim):
+        for i in range(n_dim - 1, -1, -1):
             lam_i = lambdas[i]
-            for j in range(i + 1):
-                val = lam_i * term[i, j]
-                if i > j:
-                    val += term[i - 1, j]
-                next_term[i, j] = val * inv_m
+            j_min = i - m if i > m else 0
+            for j in range(j_min, i):
+                term[i, j] = (lam_i * term[i, j] + term[i - 1, j]) * inv_m
+            term[i, i] = (lam_i * term[i, i]) * inv_m
 
-        # Acumulación en la suma parcial de Taylor T_mat (solo mitad triangular inferior j <= i)
-        for i in range(n_dim):
-            for j in range(i + 1):
-                term[i, j] = next_term[i, j]
+            for j in range(j_min, i + 1):
                 t_mat[i, j] += term[i, j]
 
     # Paso 3: Fase de duplicación (Squaring) mediante la Ley de Grupo Uniparamétrico:
     # Psi_bi(2^k * tau) = [Psi_bi(2^{k-1} * tau)]^2 repetido s_scale veces.
     # Como T_mat es triangular inferior, el índice interno k solo corre en j <= k <= i.
     temp_prod = np.zeros((n_dim, n_dim), dtype=np.complex128)
-    for _ in range(s_scale):
+    for _ in range(s):
         for i in range(n_dim):
             for j in range(i + 1):
                 acc = 0.0 + 0.0j
